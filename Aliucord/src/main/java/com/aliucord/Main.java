@@ -32,6 +32,7 @@ import com.aliucord.entities.Plugin;
 import com.aliucord.fragments.ConfirmDialog;
 import com.aliucord.patcher.*;
 import com.aliucord.settings.*;
+import com.aliucord.updater.ManagerBuild;
 import com.aliucord.updater.PluginUpdater;
 import com.aliucord.utils.ChangelogUtils;
 import com.aliucord.utils.ReflectUtils;
@@ -101,23 +102,27 @@ public final class Main {
         Patcher.addPatch(WidgetChatList.class.getDeclaredConstructor(), new Hook(param ->
             Utils.widgetChatList = (WidgetChatList) param.thisObject));
 
-        // Fix 2025-04-03 gateway change that ported visual refresh theme names over the legacy user settings
-        // Theme entries like "darker" and "midnight" are unsupported
-        Patcher.addPatch(ModelUserSettings.class, "assignField", new Class<?>[]{ Model.JsonReader.class }, new Hook(param -> {
-            var $this = (ModelUserSettings) param.thisObject;
+        // Since 1.4.0, this is implemented via a smali patch to ensure it works even if Aliucord failed to load
+        if (!ManagerBuild.hasPatches("1.4.0")) {
+            // Fix 2025-04-03 gateway change that ported visual refresh theme names over the legacy user settings
+            // Theme entries like "darker" and "midnight" are unsupported
+            Patcher.addPatch(ModelUserSettings.class, "assignField", new Class<?>[]{ Model.JsonReader.class }, new Hook(param -> {
+                var $this = (ModelUserSettings) param.thisObject;
 
-            var theme = $this.getTheme();
-            if (theme == null ||
-                ModelUserSettings.THEME_DARK.equals(theme) ||
-                ModelUserSettings.THEME_LIGHT.equals(theme) ||
-                ModelUserSettings.THEME_PURE_EVIL.equals(theme)) return;
+                switch ($this.getTheme()) {
+                    case ModelUserSettings.THEME_DARK:
+                    case ModelUserSettings.THEME_LIGHT:
+                    case ModelUserSettings.THEME_PURE_EVIL:
+                        return;
+                }
 
-            try {
-                ReflectUtils.setField($this, "theme", "dark");
-            } catch (Exception e) {
-                logger.error("Failed to fix ModelUserSettings theme", e);
-            }
-        }));
+                try {
+                    ReflectUtils.setField($this, "theme", "dark");
+                } catch (Exception e) {
+                    logger.error("Failed to fix ModelUserSettings theme", e);
+                }
+            }));
+        }
     }
 
     private static void preInitWithPermissions(AppCompatActivity activity) {
