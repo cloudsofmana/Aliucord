@@ -7,22 +7,19 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.*
-import android.view.MotionEvent
-import android.view.View
-import android.view.WindowInsetsAnimation
+import android.view.*
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
-import androidx.recyclerview.widget.ItemTouchHelper
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.*
 import androidx.viewbinding.ViewBinding
 import com.aliucord.Main
 import com.aliucord.Utils
 import com.aliucord.entities.CorePlugin
 import com.aliucord.patcher.*
 import com.aliucord.rx.CancellableSubscription
+import com.aliucord.updater.ManagerBuild
 import com.aliucord.utils.*
 import com.aliucord.utils.DimenUtils.dp
 import com.aliucord.utils.RxUtils.computationBuffered
@@ -31,7 +28,9 @@ import com.aliucord.utils.RxUtils.ui
 import com.aliucord.utils.ViewUtils.findViewById
 import com.aliucord.wrappers.ChannelWrapper.Companion.id
 import com.aliucord.wrappers.embeds.MessageEmbedWrapper
+import com.aliucord.wrappers.messages.flags
 import com.discord.api.channel.Channel
+import com.discord.api.message.attachment.MessageAttachment
 import com.discord.api.message.embed.EmbedField
 import com.discord.api.message.embed.EmbedType
 import com.discord.api.permission.Permission
@@ -56,8 +55,8 @@ import com.discord.utilities.permissions.PermissionUtils
 import com.discord.utilities.rest.RestAPI
 import com.discord.utilities.time.ClockFactory
 import com.discord.utilities.time.NtpClock
-import com.discord.utilities.viewbinding.FragmentViewBindingDelegate
 import com.discord.utilities.view.extensions.RecyclerViewExtensionsKt
+import com.discord.utilities.viewbinding.FragmentViewBindingDelegate
 import com.discord.widgets.channels.list.*
 import com.discord.widgets.chat.input.*
 import com.discord.widgets.chat.input.autocomplete.adapter.ChatInputAutocompleteAdapter
@@ -73,9 +72,7 @@ import com.discord.widgets.chat.list.entries.*
 import com.discord.widgets.chat.overlay.WidgetChatOverlay
 import com.discord.widgets.guilds.contextmenu.WidgetFolderContextMenu
 import com.discord.widgets.guilds.contextmenu.WidgetGuildContextMenu
-import com.discord.widgets.guilds.list.GuildListViewHolder
-import com.discord.widgets.guilds.list.GuildsDragAndDropCallback
-import com.discord.widgets.guilds.list.`WidgetGuildsListViewModel$createDirectMessageItems$1`
+import com.discord.widgets.guilds.list.*
 import com.discord.widgets.home.WidgetHome
 import com.discord.widgets.media.WidgetMedia
 import com.discord.widgets.settings.profile.SettingsUserProfileViewModel
@@ -94,6 +91,7 @@ import rx.subjects.Subject
 import j0.l.a.i.a as BaseEmitter
 
 private const val BYPASS_SLOWMODE_PERMISSION = 1L shl 52
+private const val ATTACHMENT_SPOILER_FLAG = 1 shl 3
 
 /**
  * Contains various fixes for stock Discord that ensure "proper" behavior.
@@ -129,6 +127,7 @@ internal class CoreFixes : CorePlugin(Manifest("CoreFixes")) {
         fixUnreadForumChannels()
         fixMemoryLeak()
         fixServerIconLongPress()
+        fixNewAttachmentSpoilers()
     }
 
     private val WidgetChatList.binding by accessField<FragmentViewBindingDelegate<WidgetChatListBinding>?>($$"binding$delegate")
@@ -744,6 +743,21 @@ internal class CoreFixes : CorePlugin(Manifest("CoreFixes")) {
                 })
             }, backpressureMode)
             return@instead observable
+        }
+    }
+
+    private fun fixNewAttachmentSpoilers() = tryPatch("Fix new attachment spoilers") {
+        if (!ManagerBuild.hasPatches("1.5.0")) {
+            logger.warn("Base app outdated, cannot patch attachment spoilers")
+            return@tryPatch
+        }
+
+        // Use new attachment spoiler flag in addition to the SPOILER_ filename prefix
+        patcher.after<MessageAttachment>("h") {
+            val isSpoiler = it.result as Boolean
+            if (isSpoiler) return@after
+
+            it.result = (this.flags and ATTACHMENT_SPOILER_FLAG) != 0
         }
     }
 
